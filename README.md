@@ -1,4 +1,4 @@
-# Porfolio
+# Portfolio
 
 A minimal portfolio platform split into two parallel deliverables:
 
@@ -49,7 +49,7 @@ ASP.NET API (Portfolio.Api)
 ### 1) Start API
 
 ```bash
-cd /home/runner/work/Porfolio/Porfolio/Portfolio.Api
+cd Portfolio.Api
 dotnet run
 ```
 
@@ -57,12 +57,21 @@ API runs on `http://localhost:5050` (development profile).
 
 ### 2) Configure OpenAI (optional)
 
-Set `ChatProviders:OpenAI:ApiKey` in `Portfolio.Api/appsettings.json` or user secrets.
+Set the API key without committing secrets:
+
+- Environment variable: `OPENAI_API_KEY`
+- Or local user secrets:
+
+```bash
+cd Portfolio.Api
+dotnet user-secrets init
+dotnet user-secrets set "ChatProviders:OpenAI:ApiKey" "<your-key>"
+```
 
 ### 3) Start frontend
 
 ```bash
-cd /home/runner/work/Porfolio/Porfolio/portfolio-web
+cd portfolio-web
 npm install
 npm run dev
 ```

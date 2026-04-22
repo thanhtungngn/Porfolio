@@ -47,7 +47,7 @@ app.MapGet("/api/portfolio", () =>
             "Create responsive UI experiences in React.",
             "Integrate AI copilots that explain implementation details on demand."
         ],
-        new ContactResponse("thanhtungngn@example.com", "https://github.com/thanhtungngn", "https://www.linkedin.com")
+        new ContactResponse("thanhtungngn@example.com", "https://github.com/thanhtungngn", "https://www.linkedin.com/in/thanhtungngn")
     );
 
     return TypedResults.Ok(info);
@@ -98,9 +98,13 @@ internal sealed class OpenAiChatProvider(IHttpClientFactory httpClientFactory, I
         try
         {
             var settings = options.Value;
-            if (string.IsNullOrWhiteSpace(settings.ApiKey))
+            var apiKey = string.IsNullOrWhiteSpace(settings.ApiKey)
+                ? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+                : settings.ApiKey;
+
+            if (string.IsNullOrWhiteSpace(apiKey))
             {
-                throw new ChatValidationException("OpenAI API key is missing. Configure ChatProviders:OpenAI:ApiKey.");
+                throw new ChatValidationException("OpenAI API key is missing. Configure OPENAI_API_KEY or ChatProviders:OpenAI:ApiKey.");
             }
 
             var payload = new
@@ -115,7 +119,7 @@ internal sealed class OpenAiChatProvider(IHttpClientFactory httpClientFactory, I
 
             var client = httpClientFactory.CreateClient();
             using var requestMessage = new HttpRequestMessage(HttpMethod.Post, settings.Endpoint);
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             requestMessage.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
             using var response = await client.SendAsync(requestMessage, cancellationToken);

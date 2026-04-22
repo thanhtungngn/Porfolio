@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
+const createId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random()}`
+
 const emptyPortfolio = {
   name: 'Loading...',
   role: '',
@@ -22,6 +27,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [messages, setMessages] = useState([
     {
+      id: createId(),
       role: 'assistant',
       content:
         'Hi! I can explain this portfolio in detail. Pick OpenAI or Ollama and ask anything.',
@@ -53,7 +59,7 @@ function App() {
       return
     }
 
-    const userMessage = { role: 'user', content: prompt.trim() }
+    const userMessage = { id: createId(), role: 'user', content: prompt.trim() }
     setMessages((current) => [...current, userMessage])
     setPrompt('')
     setLoading(true)
@@ -77,6 +83,7 @@ function App() {
       setMessages((current) => [
         ...current,
         {
+          id: createId(),
           role: 'assistant',
           content: assistantText,
         },
@@ -85,6 +92,7 @@ function App() {
       setMessages((current) => [
         ...current,
         {
+          id: createId(),
           role: 'assistant',
           content: 'Cannot reach backend. Ensure API is running on http://localhost:5050.',
         },
@@ -170,8 +178,8 @@ function App() {
         </form>
 
         <div className="chat-log" aria-live="polite">
-          {messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
+          {messages.map((message) => (
+            <div key={message.id} className={`message ${message.role}`}>
               <strong>{message.role === 'user' ? 'You' : 'Agent'}</strong>
               <p>{message.content}</p>
             </div>
