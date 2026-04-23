@@ -27,13 +27,14 @@
 
 ---
 
-## Phase 2 — Ingestion Pipeline ⬜
+## Phase 2 — Ingestion Pipeline ✅
 
-- [ ] Create `DocumentChunker` — splits text into ~500 token chunks with overlap
-- [ ] Create `PdfDocumentLoader` — loads and extracts text from PDFs using PdfPig
-- [ ] Create `IngestionService` — orchestrates load → chunk → embed → store
-- [ ] Add `POST /api/rag/ingest` endpoint
-- [ ] Test ingestion with a sample document
+- [x] Create `DocumentChunker` — splits text into ~500 token chunks with overlap
+- [x] Create `PdfDocumentLoader` — loads and extracts text from PDFs using PdfPig
+- [x] Create `IngestionService` — orchestrates load → chunk → embed → store
+- [x] Add `POST /api/rag/ingest` endpoint
+- [x] Extract `IEmbeddingService` and `IVectorStore` interfaces for testability
+- [x] Write unit tests — 11/11 passed (`DocumentChunkerTests`, `IngestionServiceTests`)
 
 ---
 

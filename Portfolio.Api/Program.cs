@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Grpc.Core;
 using Microsoft.Extensions.Options;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,10 +11,13 @@ builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection("ChatProviders:OpenAI"));
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("ChatProviders:Ollama"));
-builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Rag:Gemini"));
+builder.Services.Configure<OpenAiEmbeddingOptions>(builder.Configuration.GetSection("Rag:OpenAiEmbedding"));
 builder.Services.Configure<QdrantOptions>(builder.Configuration.GetSection("Rag:Qdrant"));
-builder.Services.AddSingleton<QdrantVectorStore>();
-builder.Services.AddScoped<GeminiEmbeddingService>();
+builder.Services.AddSingleton<IVectorStore, QdrantVectorStore>();
+builder.Services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
+builder.Services.AddScoped<DocumentChunker>();
+builder.Services.AddScoped<PdfDocumentLoader>();
+builder.Services.AddScoped<IngestionService>();
 builder.Services.AddScoped<OpenAiChatProvider>();
 builder.Services.AddScoped<OllamaChatProvider>();
 builder.Services.AddScoped<ChatAgentService>();
@@ -31,6 +36,11 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.Title = "Portfolio RAG API";
+        options.Theme = ScalarTheme.Purple;
+    });
 }
 
 app.UseCors("frontend");
@@ -76,6 +86,35 @@ app.MapPost("/api/chat", async (ChatRequest request, ChatAgentService chatAgentS
     catch (ChatProviderException ex)
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
+app.MapPost("/api/rag/ingest", async (IngestRequest request, IngestionService ingestionService, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Text) && string.IsNullOrWhiteSpace(request.FilePath))
+        return Results.BadRequest(new { error = "Provide either 'text' or 'filePath'." });
+
+    try
+    {
+        var count = !string.IsNullOrWhiteSpace(request.FilePath)
+            ? await ingestionService.IngestPdfAsync(request.FilePath!, cancellationToken)
+            : await ingestionService.IngestTextAsync(request.Text!, request.Source ?? "manual", cancellationToken);
+
+        return Results.Ok(new { chunksIngested = count });
+    }
+    catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.Unimplemented || ex.StatusCode == Grpc.Core.StatusCode.Unavailable)
+    {
+        return Results.Problem(
+            "Cannot connect to Qdrant. Make sure Qdrant is running: docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (InvalidOperationException ex) when (ex.Message.Contains("OpenAI"))
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
     }
 });
 
@@ -209,6 +248,8 @@ internal sealed class OllamaChatProvider(IHttpClientFactory httpClientFactory, I
         }
     }
 }
+
+internal sealed record IngestRequest(string? FilePath, string? Text, string? Source);
 
 internal sealed class ChatValidationException(string message) : Exception(message);
 internal sealed class ChatProviderException(string message) : Exception(message);

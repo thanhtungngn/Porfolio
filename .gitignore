@@ -10,3 +10,4 @@
 .vscode/
 .idea/
 /.vs
+/Portfolio.Api/appsettings.Development.json
