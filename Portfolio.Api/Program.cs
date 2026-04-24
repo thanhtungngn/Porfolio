@@ -1,18 +1,42 @@
 using System.Net.Http.Headers;
+using System.Threading.RateLimiting;
 using System.Text;
 using System.Text.Json;
 using Grpc.Core;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .WriteTo.Console();
+});
+
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
+builder.Services.Configure<ApiSecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection("ChatProviders:OpenAI"));
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("ChatProviders:Ollama"));
 builder.Services.Configure<OpenAiEmbeddingOptions>(builder.Configuration.GetSection("Rag:OpenAiEmbedding"));
 builder.Services.Configure<QdrantOptions>(builder.Configuration.GetSection("Rag:Qdrant"));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("chat", limiter =>
+    {
+        limiter.PermitLimit = 20;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+    });
+});
 builder.Services.AddSingleton<IVectorStore, QdrantVectorStore>();
 builder.Services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
 builder.Services.AddScoped<DocumentChunker>();
@@ -34,6 +58,22 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Request");
+    var start = DateTime.UtcNow;
+
+    await next();
+
+    var elapsed = DateTime.UtcNow - start;
+    logger.LogInformation(
+        "Request completed {Method} {Path} with {StatusCode} in {ElapsedMs}ms",
+        context.Request.Method,
+        context.Request.Path,
+        context.Response.StatusCode,
+        elapsed.TotalMilliseconds);
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -45,6 +85,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("frontend");
+app.UseRateLimiter();
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
@@ -88,10 +129,22 @@ app.MapPost("/api/chat", async (ChatRequest request, ChatAgentService chatAgentS
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
     }
-});
+}).RequireRateLimiting("chat");
 
-app.MapPost("/api/rag/ingest", async (IngestRequest request, IngestionService ingestionService, CancellationToken cancellationToken) =>
+app.MapPost("/api/rag/ingest", async (
+    IngestRequest request,
+    IngestionService ingestionService,
+    IOptions<ApiSecurityOptions> securityOptions,
+    HttpRequest httpRequest,
+    CancellationToken cancellationToken) =>
 {
+    var expectedApiKey = string.IsNullOrWhiteSpace(securityOptions.Value.IngestApiKey)
+        ? Environment.GetEnvironmentVariable("INGEST_API_KEY")
+        : securityOptions.Value.IngestApiKey;
+    var providedApiKey = httpRequest.Headers["X-API-Key"].FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(expectedApiKey) || !string.Equals(expectedApiKey, providedApiKey, StringComparison.Ordinal))
+        return Results.Unauthorized();
+
     if (string.IsNullOrWhiteSpace(request.Text) && string.IsNullOrWhiteSpace(request.FilePath))
         return Results.BadRequest(new { error = "Provide either 'text' or 'filePath'." });
 
@@ -322,6 +375,11 @@ internal sealed class OllamaOptions
     public string Endpoint { get; init; } = "http://localhost:11434/api/chat";
     public string DefaultModel { get; init; } = "llama3.2";
     public string SystemPrompt { get; init; } = "You are an assistant for a portfolio website. Be concise and practical.";
+}
+
+internal sealed class ApiSecurityOptions
+{
+    public string IngestApiKey { get; init; } = string.Empty;
 }
 
 internal sealed record PortfolioResponse(

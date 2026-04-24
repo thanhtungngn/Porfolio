@@ -118,17 +118,17 @@ flowchart TD
 - [x] `ChatRequest` extended with optional `useRag` flag
 - [x] Unit tests: `RagRetrievalServiceTests` (context join, empty results, topK, missing payload)
 
-### Phase 4 — Frontend RAG Integration 🔲
+### Phase 4 — Frontend RAG Integration ✅
 - [x] Add RAG toggle (checkbox/switch) to the React chat UI
 - [x] Pass `useRag` flag in `/api/chat` request body
 - [x] Display source attribution from retrieved chunks
 
 ### Phase 5 — Production Hardening 🔲
-- [ ] Authentication / API key guard on ingest endpoints
-- [ ] Rate limiting on `/api/chat`
-- [ ] Structured logging (Serilog / OpenTelemetry)
-- [ ] Docker Compose for API + Qdrant
-- [ ] CI/CD pipeline (GitHub Actions)
+- [x] Authentication / API key guard on ingest endpoints
+- [x] Rate limiting on `/api/chat`
+- [x] Structured logging (Serilog + request timing middleware)
+- [x] Docker Compose for API + Qdrant
+- [x] CI/CD pipeline (GitHub Actions)
 
 ---
 
@@ -160,6 +160,9 @@ Fill in your secrets in `Portfolio.Api/appsettings.json` or set environment vari
 ```bash
 # Used for both chat (OpenAI provider) and RAG embeddings
 OPENAI_API_KEY=sk-...
+
+# Required for protected ingest endpoint (/api/rag/ingest)
+INGEST_API_KEY=your-ingest-api-key
 ```
 
 `appsettings.json` reference:
@@ -203,6 +206,15 @@ For local Qdrant update the config:
 ```json
 "Qdrant": { "Host": "localhost", "Port": 6334, "ApiKey": "" }
 ```
+
+### 3.1 Run full stack with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+- API: `http://localhost:5050`
+- Qdrant: `http://localhost:6333`
 
 ### 4. Start the API
 
@@ -326,6 +338,16 @@ dotnet test
 | `DocumentChunkerTests` | Empty input, single chunk, multi-chunk, unique IDs, sequential index, word limit, source preservation |
 | `IngestionServiceTests` | Chunk count, `EnsureCollection` called once, `Upsert` called once, empty text short-circuits |
 | `RagRetrievalServiceTests` | Context join, no results returns empty string, query passed to embedder, topK forwarded to search, missing payload ignored |
+
+---
+
+## CI/CD
+
+GitHub Actions workflow is available at `.github/workflows/ci.yml` and runs:
+
+- .NET restore/build/test
+- Frontend build (`portfolio-web`)
+- Docker compose validation + API image build
 
 ---
 
