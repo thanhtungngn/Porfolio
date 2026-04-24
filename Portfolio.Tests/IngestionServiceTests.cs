@@ -18,7 +18,7 @@ public class IngestionServiceTests
     {
         // 600 words → 2 chunks (chunkSize=500, overlap=50)
         var text = string.Join(' ', Enumerable.Repeat("word", 600));
-        var fakeEmbedding = new float[768];
+        var fakeEmbedding = new float[1536];
 
         _embeddingService.GetEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(fakeEmbedding);
@@ -34,12 +34,12 @@ public class IngestionServiceTests
     {
         var text = string.Join(' ', Enumerable.Repeat("word", 10));
         _embeddingService.GetEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new float[768]);
+            .Returns(new float[1536]);
 
         var sut = CreateSut();
         await sut.IngestTextAsync(text, "source");
 
-        await _vectorStore.Received(1).EnsureCollectionAsync(768u, Arg.Any<CancellationToken>());
+        await _vectorStore.Received(1).EnsureCollectionAsync(1536u, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class IngestionServiceTests
     {
         var text = string.Join(' ', Enumerable.Repeat("word", 10));
         _embeddingService.GetEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new float[768]);
+            .Returns(new float[1536]);
 
         var sut = CreateSut();
         await sut.IngestTextAsync(text, "source");

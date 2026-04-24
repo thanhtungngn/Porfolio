@@ -18,6 +18,7 @@ builder.Services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
 builder.Services.AddScoped<DocumentChunker>();
 builder.Services.AddScoped<PdfDocumentLoader>();
 builder.Services.AddScoped<IngestionService>();
+builder.Services.AddScoped<RagRetrievalService>();
 builder.Services.AddScoped<OpenAiChatProvider>();
 builder.Services.AddScoped<OllamaChatProvider>();
 builder.Services.AddScoped<ChatAgentService>();
@@ -118,17 +119,58 @@ app.MapPost("/api/rag/ingest", async (IngestRequest request, IngestionService in
     }
 });
 
+app.MapPost("/api/rag/search", async (RagSearchRequest request, RagRetrievalService ragService, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Query))
+        return Results.BadRequest(new { error = "Query is required." });
+
+    try
+    {
+        var context = await ragService.GetContextAsync(request.Query, request.TopK ?? 5, cancellationToken);
+        return Results.Ok(new { context });
+    }
+    catch (InvalidOperationException ex) when (ex.Message.Contains("OpenAI"))
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (RpcException ex) when (ex.StatusCode == StatusCode.Unimplemented || ex.StatusCode == StatusCode.Unavailable)
+    {
+        return Results.Problem(
+            "Cannot connect to Qdrant. Make sure Qdrant is running.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+    }
+});
+
 app.Run();
 
-internal sealed class ChatAgentService(OpenAiChatProvider openAiChatProvider, OllamaChatProvider ollamaChatProvider)
+internal sealed class ChatAgentService(
+    OpenAiChatProvider openAiChatProvider,
+    OllamaChatProvider ollamaChatProvider,
+    RagRetrievalService ragRetrievalService)
 {
-    public Task<string> GetReplyAsync(ChatRequest request, CancellationToken cancellationToken)
+    public async Task<string> GetReplyAsync(ChatRequest request, CancellationToken cancellationToken)
     {
-        var provider = request.Provider?.Trim().ToLowerInvariant();
+        var augmentedRequest = request;
+
+        if (request.UseRag == true && !string.IsNullOrWhiteSpace(request.Message))
+        {
+            var context = await ragRetrievalService.GetContextAsync(request.Message, cancellationToken: cancellationToken);
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                var augmentedMessage = $"Use the following context to answer the question.\n\nContext:\n{context}\n\nQuestion:\n{request.Message}";
+                augmentedRequest = request with { Message = augmentedMessage };
+            }
+        }
+
+        var provider = augmentedRequest.Provider?.Trim().ToLowerInvariant();
         return provider switch
         {
-            "openai" => openAiChatProvider.GetReplyAsync(request, cancellationToken),
-            "ollama" => ollamaChatProvider.GetReplyAsync(request, cancellationToken),
+            "openai" => await openAiChatProvider.GetReplyAsync(augmentedRequest, cancellationToken),
+            "ollama" => await ollamaChatProvider.GetReplyAsync(augmentedRequest, cancellationToken),
             _ => throw new ChatValidationException("Provider must be either 'openai' or 'ollama'.")
         };
     }
@@ -278,5 +320,6 @@ internal sealed record PortfolioResponse(
     ContactResponse Contact);
 
 internal sealed record ContactResponse(string Email, string GitHub, string LinkedIn);
-internal sealed record ChatRequest(string Provider, string Message, string? Model);
+internal sealed record ChatRequest(string Provider, string Message, string? Model, bool? UseRag = false);
 internal sealed record ChatResponse(string Reply);
+internal sealed record RagSearchRequest(string Query, int? TopK);
