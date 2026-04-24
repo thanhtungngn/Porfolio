@@ -1,4 +1,6 @@
-﻿namespace Portfolio.Tests;
+﻿using Portfolio.Api.Features.Rag.Services;
+
+namespace Portfolio.Tests;
 
 public class DocumentChunkerTests
 {

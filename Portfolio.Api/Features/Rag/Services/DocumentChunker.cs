@@ -1,4 +1,8 @@
-﻿public class DocumentChunker
+﻿using Portfolio.Api.Features.Rag.Models;
+
+namespace Portfolio.Api.Features.Rag.Services;
+
+public class DocumentChunker
 {
     private const int DefaultChunkSize = 500;
     private const int DefaultOverlap = 50;

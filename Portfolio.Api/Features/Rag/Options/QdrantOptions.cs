@@ -1,3 +1,5 @@
+namespace Portfolio.Api.Features.Rag.Options;
+
 public class QdrantOptions
 {
     public string Host { get; set; } = "localhost";

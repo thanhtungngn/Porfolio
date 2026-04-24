@@ -1,17 +1,20 @@
 using NSubstitute;
 using Qdrant.Client.Grpc;
+using Microsoft.Extensions.Logging;
+using Portfolio.Api.Features.Rag.Services;
 
 namespace Portfolio.Tests;
 
 public class IngestionServiceTests
 {
-    private readonly PdfDocumentLoader _pdfLoader       = Substitute.For<PdfDocumentLoader>();
+    private readonly PdfDocumentLoader _pdfLoader       = new(Substitute.For<ILogger<PdfDocumentLoader>>());
     private readonly DocumentChunker   _chunker         = new();
     private readonly IEmbeddingService _embeddingService = Substitute.For<IEmbeddingService>();
     private readonly IVectorStore      _vectorStore      = Substitute.For<IVectorStore>();
+    private readonly ILogger<IngestionService> _logger = Substitute.For<ILogger<IngestionService>>();
 
     private IngestionService CreateSut() =>
-        new(_pdfLoader, _chunker, _embeddingService, _vectorStore);
+        new(_pdfLoader, _chunker, _embeddingService, _vectorStore, _logger);
 
     [Fact]
     public async Task IngestTextAsync_ReturnsCorrectChunkCount()

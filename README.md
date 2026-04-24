@@ -130,6 +130,12 @@ flowchart TD
 - [x] Docker Compose for API + Qdrant
 - [x] CI/CD pipeline (GitHub Actions)
 
+### Phase 6 — Aspire Orchestration & Observability ✅
+- [x] Added `Portfolio.AppHost` Aspire host project
+- [x] Added `Portfolio.ServiceDefaults` shared service defaults project
+- [x] Wired API to `AddServiceDefaults()` and `MapDefaultEndpoints()`
+- [x] Added service-level structured logging in RAG services (ingestion, embedding, retrieval, vector store, PDF loader)
+
 ---
 
 ## Prerequisites
@@ -215,6 +221,14 @@ docker compose up --build
 
 - API: `http://localhost:5050`
 - Qdrant: `http://localhost:6333`
+
+### 3.2 Run with .NET Aspire (recommended for local orchestration)
+
+```bash
+dotnet run --project Portfolio.AppHost
+```
+
+This starts the Aspire orchestration host with `portfolio-api` and `qdrant` resources.
 
 ### 4. Start the API
 
@@ -338,6 +352,13 @@ dotnet test
 | `DocumentChunkerTests` | Empty input, single chunk, multi-chunk, unique IDs, sequential index, word limit, source preservation |
 | `IngestionServiceTests` | Chunk count, `EnsureCollection` called once, `Upsert` called once, empty text short-circuits |
 | `RagRetrievalServiceTests` | Context join, no results returns empty string, query passed to embedder, topK forwarded to search, missing payload ignored |
+
+---
+
+## Aspire Projects
+
+- `Portfolio.AppHost`: distributed app host for local orchestration (API + Qdrant)
+- `Portfolio.ServiceDefaults`: shared defaults for OpenTelemetry, health checks, service discovery, and resilient HTTP
 
 ---
 

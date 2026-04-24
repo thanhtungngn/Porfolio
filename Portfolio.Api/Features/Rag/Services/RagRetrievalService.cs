@@ -1,11 +1,21 @@
-public class RagRetrievalService(IEmbeddingService embeddingService, IVectorStore vectorStore)
+namespace Portfolio.Api.Features.Rag.Services;
+
+public class RagRetrievalService(
+    IEmbeddingService embeddingService,
+    IVectorStore vectorStore,
+    ILogger<RagRetrievalService> logger)
 {
     public async Task<IReadOnlyList<RagMatch>> GetMatchesAsync(string query, int topK = 5, CancellationToken cancellationToken = default)
     {
+        logger.LogInformation(
+            "RAG retrieval started. QueryLength={QueryLength}, TopK={TopK}",
+            query?.Length ?? 0,
+            topK);
+
         var queryVector = await embeddingService.GetEmbeddingAsync(query, cancellationToken);
         var results = await vectorStore.SearchAsync(queryVector, topK, cancellationToken);
 
-        return results
+        var matches = results
             .Select(r =>
             {
                 var text = r.Payload.TryGetValue("text", out var textVal) ? textVal.StringValue : string.Empty;
@@ -14,6 +24,12 @@ public class RagRetrievalService(IEmbeddingService embeddingService, IVectorStor
             })
             .Where(m => !string.IsNullOrWhiteSpace(m.Text))
             .ToList();
+
+        logger.LogInformation(
+            "RAG retrieval completed. MatchCount={MatchCount}",
+            matches.Count);
+
+        return matches;
     }
 
     public async Task<string> GetContextAsync(string query, int topK = 5, CancellationToken cancellationToken = default)

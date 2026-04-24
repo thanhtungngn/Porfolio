@@ -24,6 +24,9 @@ jobs:
       - name: Build
         run: dotnet build Portfolio.slnx --configuration Release --no-restore
 
+      - name: Build AppHost
+        run: dotnet build Portfolio.AppHost/Portfolio.AppHost.csproj --configuration Release --no-restore
+
       - name: Test
         run: dotnet test Portfolio.Tests/Portfolio.Tests.csproj --configuration Release --no-build --verbosity normal
 

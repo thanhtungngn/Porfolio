@@ -1,3 +1,5 @@
+namespace Portfolio.Api.Features.Rag.Options;
+
 public class OpenAiEmbeddingOptions
 {
     public string ApiKey { get; set; } = string.Empty;

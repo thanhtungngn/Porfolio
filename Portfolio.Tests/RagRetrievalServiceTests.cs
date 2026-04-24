@@ -1,5 +1,7 @@
 using NSubstitute;
 using Qdrant.Client.Grpc;
+using Microsoft.Extensions.Logging;
+using Portfolio.Api.Features.Rag.Services;
 
 namespace Portfolio.Tests;
 
@@ -7,8 +9,9 @@ public class RagRetrievalServiceTests
 {
     private readonly IEmbeddingService _embeddingService = Substitute.For<IEmbeddingService>();
     private readonly IVectorStore _vectorStore = Substitute.For<IVectorStore>();
+    private readonly ILogger<RagRetrievalService> _logger = Substitute.For<ILogger<RagRetrievalService>>();
 
-    private RagRetrievalService CreateSut() => new(_embeddingService, _vectorStore);
+    private RagRetrievalService CreateSut() => new(_embeddingService, _vectorStore, _logger);
 
     [Fact]
     public async Task GetContextAsync_ReturnsJoinedChunkTexts()
