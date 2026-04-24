@@ -78,7 +78,7 @@ app.MapPost("/api/chat", async (ChatRequest request, ChatAgentService chatAgentS
     try
     {
         var reply = await chatAgentService.GetReplyAsync(request, cancellationToken);
-        return Results.Ok(new ChatResponse(reply));
+        return Results.Ok(reply);
     }
     catch (ChatValidationException ex)
     {
@@ -126,8 +126,9 @@ app.MapPost("/api/rag/search", async (RagSearchRequest request, RagRetrievalServ
 
     try
     {
-        var context = await ragService.GetContextAsync(request.Query, request.TopK ?? 5, cancellationToken);
-        return Results.Ok(new { context });
+        var matches = await ragService.GetMatchesAsync(request.Query, request.TopK ?? 5, cancellationToken);
+        var context = string.Join("\n\n", matches.Select(m => m.Text));
+        return Results.Ok(new RagSearchResponse(context, matches));
     }
     catch (InvalidOperationException ex) when (ex.Message.Contains("OpenAI"))
     {
@@ -152,27 +153,39 @@ internal sealed class ChatAgentService(
     OllamaChatProvider ollamaChatProvider,
     RagRetrievalService ragRetrievalService)
 {
-    public async Task<string> GetReplyAsync(ChatRequest request, CancellationToken cancellationToken)
+    public async Task<ChatResponse> GetReplyAsync(ChatRequest request, CancellationToken cancellationToken)
     {
         var augmentedRequest = request;
+        IReadOnlyList<RagSource> sources = [];
 
         if (request.UseRag == true && !string.IsNullOrWhiteSpace(request.Message))
         {
-            var context = await ragRetrievalService.GetContextAsync(request.Message, cancellationToken: cancellationToken);
-            if (!string.IsNullOrWhiteSpace(context))
+            var matches = await ragRetrievalService.GetMatchesAsync(request.Message, cancellationToken: cancellationToken);
+            if (matches.Count > 0)
             {
+                var context = string.Join("\n\n", matches.Select(m => m.Text));
                 var augmentedMessage = $"Use the following context to answer the question.\n\nContext:\n{context}\n\nQuestion:\n{request.Message}";
                 augmentedRequest = request with { Message = augmentedMessage };
+
+                sources = matches
+                    .Where(m => !string.IsNullOrWhiteSpace(m.Source))
+                    .Select(m => new RagSource(m.Source, m.Score))
+                    .GroupBy(s => s.Source, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.OrderByDescending(x => x.Score).First())
+                    .OrderByDescending(s => s.Score)
+                    .ToList();
             }
         }
 
         var provider = augmentedRequest.Provider?.Trim().ToLowerInvariant();
-        return provider switch
+        var reply = provider switch
         {
             "openai" => await openAiChatProvider.GetReplyAsync(augmentedRequest, cancellationToken),
             "ollama" => await ollamaChatProvider.GetReplyAsync(augmentedRequest, cancellationToken),
             _ => throw new ChatValidationException("Provider must be either 'openai' or 'ollama'.")
         };
+
+        return new ChatResponse(reply, sources);
     }
 }
 
@@ -321,5 +334,7 @@ internal sealed record PortfolioResponse(
 
 internal sealed record ContactResponse(string Email, string GitHub, string LinkedIn);
 internal sealed record ChatRequest(string Provider, string Message, string? Model, bool? UseRag = false);
-internal sealed record ChatResponse(string Reply);
+internal sealed record ChatResponse(string Reply, IReadOnlyList<RagSource>? Sources = null);
+internal sealed record RagSource(string Source, float Score);
 internal sealed record RagSearchRequest(string Query, int? TopK);
+internal sealed record RagSearchResponse(string Context, IReadOnlyList<RagMatch> Matches);

@@ -63,6 +63,17 @@
   font-size: 0.9rem;
 }
 
+.chat-controls .rag-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-controls .rag-toggle input {
+  width: auto;
+  margin: 0;
+}
+
 .chat-controls input,
 .chat-controls textarea,
 .chat-controls select {

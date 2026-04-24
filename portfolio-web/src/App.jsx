@@ -23,6 +23,7 @@ function App() {
   const [portfolio, setPortfolio] = useState(emptyPortfolio)
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('')
+  const [useRag, setUseRag] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
   const [messages, setMessages] = useState([
@@ -73,19 +74,24 @@ function App() {
         body: JSON.stringify({
           provider,
           model: model.trim() || null,
+          useRag,
           message: userMessage.content,
         }),
       })
 
       const data = await response.json()
       const assistantText = response.ok ? data.reply : data.error ?? 'Unable to answer right now.'
+      const sourceLine =
+        response.ok && Array.isArray(data.sources) && data.sources.length > 0
+          ? `\n\nSources: ${data.sources.map((s) => s.source).join(', ')}`
+          : ''
 
       setMessages((current) => [
         ...current,
         {
           id: createId(),
           role: 'assistant',
-          content: assistantText,
+          content: `${assistantText}${sourceLine}`,
         },
       ])
     } catch {
@@ -162,6 +168,15 @@ function App() {
               onChange={(event) => setModel(event.target.value)}
               placeholder={provider === 'openai' ? 'gpt-4o-mini' : 'llama3.2'}
             />
+          </label>
+
+          <label className="rag-toggle">
+            <input
+              type="checkbox"
+              checked={useRag}
+              onChange={(event) => setUseRag(event.target.checked)}
+            />
+            Use RAG context
           </label>
 
           <label>

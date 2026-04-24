@@ -119,9 +119,9 @@ flowchart TD
 - [x] Unit tests: `RagRetrievalServiceTests` (context join, empty results, topK, missing payload)
 
 ### Phase 4 — Frontend RAG Integration 🔲
-- [ ] Add RAG toggle (checkbox/switch) to the React chat UI
-- [ ] Pass `useRag` flag in `/api/chat` request body
-- [ ] Display source attribution from retrieved chunks
+- [x] Add RAG toggle (checkbox/switch) to the React chat UI
+- [x] Pass `useRag` flag in `/api/chat` request body
+- [x] Display source attribution from retrieved chunks
 
 ### Phase 5 — Production Hardening 🔲
 - [ ] Authentication / API key guard on ingest endpoints
