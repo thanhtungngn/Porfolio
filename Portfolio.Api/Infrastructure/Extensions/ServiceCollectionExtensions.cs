@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         services.Configure<ApiSecurityOptions>(configuration.GetSection("Security"));
         services.Configure<OpenAiOptions>(configuration.GetSection("ChatProviders:OpenAI"));
         services.Configure<OllamaOptions>(configuration.GetSection("ChatProviders:Ollama"));
+        services.Configure<McpOptions>(configuration.GetSection("Mcp"));
         services.Configure<OpenAiEmbeddingOptions>(configuration.GetSection("Rag:OpenAiEmbedding"));
         services.Configure<QdrantOptions>(configuration.GetSection("Rag:Qdrant"));
 
@@ -40,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<RagRetrievalService>();
         services.AddScoped<IChatProvider, OpenAiChatProvider>();
         services.AddScoped<IChatProvider, OllamaChatProvider>();
+        services.AddScoped<IMcpToolGateway, McpToolGateway>();
         services.AddScoped<ChatAgentService>();
 
         services.AddCors(options =>
