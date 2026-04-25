@@ -27,41 +27,58 @@ internal sealed class McpToolGateway(
             logger.LogInformation("MCP tool discovery started. Endpoint={Endpoint}", endpoint);
             var stopwatch = Stopwatch.StartNew();
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            using var request = new HttpRequestMessage(ParseHttpMethod(settings.ToolsHttpMethod, HttpMethod.Get), endpoint);
             AddAuthHeader(request, settings.ApiKey);
+            AddAcceptHeaders(request);
 
-            var json = await SendAsync(request, settings.TimeoutSeconds, cancellationToken);
-            using var doc = JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("tools", out var toolsElement) || toolsElement.ValueKind != JsonValueKind.Array)
+            if (request.Method == HttpMethod.Post)
             {
+                request.Content = new StringContent(
+                    "{\"jsonrpc\":\"2.0\",\"id\":\"tools-list\",\"method\":\"tools/list\",\"params\":{}}",
+                    Encoding.UTF8,
+                    "application/json");
+            }
+
+            var responseBody = await SendAsync(request, settings.TimeoutSeconds, cancellationToken);
+            if (!TryParseJsonDocument(responseBody, out var doc))
+            {
+                logger.LogWarning("MCP tool discovery returned non-JSON payload. Falling back without MCP tools.");
                 return [];
             }
 
-            var tools = new List<McpToolDefinition>();
-            foreach (var tool in toolsElement.EnumerateArray())
+            using (doc)
             {
-                var name = tool.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
-                if (string.IsNullOrWhiteSpace(name))
+                var toolsElement = GetToolsArray(doc.RootElement);
+                if (!toolsElement.HasValue || toolsElement.Value.ValueKind != JsonValueKind.Array)
                 {
-                    continue;
+                    return [];
                 }
 
-                var description = tool.TryGetProperty("description", out var descEl)
-                    ? descEl.GetString() ?? string.Empty
-                    : string.Empty;
+                var tools = new List<McpToolDefinition>();
+                foreach (var tool in toolsElement.Value.EnumerateArray())
+                {
+                    var name = tool.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
 
-                var schemaJson = tool.TryGetProperty("inputSchema", out var schemaEl)
-                    ? schemaEl.GetRawText()
-                    : "{\"type\":\"object\",\"properties\":{}}";
+                    var description = tool.TryGetProperty("description", out var descEl)
+                        ? descEl.GetString() ?? string.Empty
+                        : string.Empty;
 
-                tools.Add(new McpToolDefinition(name!, description, schemaJson));
+                    var schemaJson = tool.TryGetProperty("inputSchema", out var schemaEl)
+                        ? schemaEl.GetRawText()
+                        : "{\"type\":\"object\",\"properties\":{}}";
+
+                    tools.Add(new McpToolDefinition(name!, description, schemaJson));
+                }
+
+                stopwatch.Stop();
+                logger.LogInformation("MCP tool discovery completed. ToolCount={ToolCount}, DurationMs={DurationMs}", tools.Count, stopwatch.ElapsedMilliseconds);
+
+                return tools;
             }
-
-            stopwatch.Stop();
-            logger.LogInformation("MCP tool discovery completed. ToolCount={ToolCount}, DurationMs={DurationMs}", tools.Count, stopwatch.ElapsedMilliseconds);
-
-            return tools;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
@@ -90,48 +107,127 @@ internal sealed class McpToolGateway(
 
             var stopwatch = Stopwatch.StartNew();
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            using var request = new HttpRequestMessage(ParseHttpMethod(settings.InvokeHttpMethod, HttpMethod.Post), endpoint);
             AddAuthHeader(request, settings.ApiKey);
+            AddAcceptHeaders(request);
 
-            request.Content = new StringContent(
-                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson,
-                Encoding.UTF8,
-                "application/json");
-
-            var json = await SendAsync(request, settings.TimeoutSeconds, cancellationToken);
-            using var doc = JsonDocument.Parse(json);
-
-            stopwatch.Stop();
-
-            if (doc.RootElement.TryGetProperty("content", out var contentEl))
+            if (request.Method != HttpMethod.Get && request.Method != HttpMethod.Head)
             {
-                var content = contentEl.ValueKind == JsonValueKind.String
-                    ? contentEl.GetString() ?? string.Empty
-                    : contentEl.GetRawText();
-
-                logger.LogInformation(
-                    "MCP invoke completed. ToolName={ToolName}, DurationMs={DurationMs}, ResultLength={ResultLength}",
-                    toolName,
-                    stopwatch.ElapsedMilliseconds,
-                    content.Length);
-
-                return content;
+                var normalizedArguments = NormalizeArgumentsJson(argumentsJson);
+                request.Content = new StringContent(
+                    $"{{\"jsonrpc\":\"2.0\",\"id\":\"tool-call-{Guid.NewGuid():N}\",\"method\":\"tools/call\",\"params\":{{\"name\":{JsonSerializer.Serialize(toolName)},\"arguments\":{normalizedArguments}}}}}",
+                    Encoding.UTF8,
+                    "application/json");
             }
 
-            var raw = doc.RootElement.GetRawText();
-            logger.LogInformation(
-                "MCP invoke completed with raw payload. ToolName={ToolName}, DurationMs={DurationMs}, ResultLength={ResultLength}",
-                toolName,
-                stopwatch.ElapsedMilliseconds,
-                raw.Length);
+            var responseBody = await SendAsync(request, settings.TimeoutSeconds, cancellationToken);
+            if (!TryParseJsonDocument(responseBody, out var doc))
+            {
+                stopwatch.Stop();
+                logger.LogInformation(
+                    "MCP invoke completed with non-JSON payload. ToolName={ToolName}, DurationMs={DurationMs}, ResultLength={ResultLength}",
+                    toolName,
+                    stopwatch.ElapsedMilliseconds,
+                    responseBody.Length);
+                return responseBody;
+            }
 
-            return raw;
+            using (doc)
+            {
+                stopwatch.Stop();
+
+                if (TryExtractToolContent(doc.RootElement, out var extractedContent))
+                {
+                    logger.LogInformation(
+                        "MCP invoke completed. ToolName={ToolName}, DurationMs={DurationMs}, ResultLength={ResultLength}",
+                        toolName,
+                        stopwatch.ElapsedMilliseconds,
+                        extractedContent.Length);
+
+                    return extractedContent;
+                }
+
+                var raw = doc.RootElement.GetRawText();
+                logger.LogInformation(
+                    "MCP invoke completed with raw payload. ToolName={ToolName}, DurationMs={DurationMs}, ResultLength={ResultLength}",
+                    toolName,
+                    stopwatch.ElapsedMilliseconds,
+                    raw.Length);
+
+                return raw;
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             logger.LogWarning(ex, "MCP tool invocation failed for tool {ToolName}.", toolName);
             return $"Tool '{toolName}' invocation failed.";
         }
+    }
+
+    private static bool TryParseJsonDocument(string payload, out JsonDocument? document)
+    {
+        document = null;
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        var trimmed = payload.Trim();
+        if ((trimmed.StartsWith('{') || trimmed.StartsWith('[')) && TryParseJson(trimmed, out document))
+        {
+            return true;
+        }
+
+        if (TryExtractJsonFromSse(payload, out var sseJson) && TryParseJson(sseJson, out document))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseJson(string payload, out JsonDocument? document)
+    {
+        document = null;
+        try
+        {
+            document = JsonDocument.Parse(payload);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryExtractJsonFromSse(string payload, out string json)
+    {
+        json = string.Empty;
+        var normalized = payload.Replace("\r", string.Empty, StringComparison.Ordinal);
+        var lines = normalized.Split('\n');
+
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            var line = lines[i].Trim();
+            if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var data = line[5..].Trim();
+            if (string.IsNullOrWhiteSpace(data) || string.Equals(data, "[DONE]", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (data.StartsWith('{') || data.StartsWith('['))
+            {
+                json = data;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<string> SendAsync(HttpRequestMessage request, int timeoutSeconds, CancellationToken cancellationToken)
@@ -155,10 +251,126 @@ internal sealed class McpToolGateway(
         }
     }
 
+    private static void AddAcceptHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json") { Quality = 1.0 });
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream") { Quality = 0.5 });
+    }
+
+    private static JsonElement? GetToolsArray(JsonElement root)
+    {
+        if (root.TryGetProperty("tools", out var directTools) && directTools.ValueKind == JsonValueKind.Array)
+        {
+            return directTools;
+        }
+
+        if (root.TryGetProperty("result", out var result)
+            && result.ValueKind == JsonValueKind.Object
+            && result.TryGetProperty("tools", out var resultTools)
+            && resultTools.ValueKind == JsonValueKind.Array)
+        {
+            return resultTools;
+        }
+
+        return null;
+    }
+
+    private static bool TryExtractToolContent(JsonElement root, out string content)
+    {
+        if (root.TryGetProperty("content", out var directContent))
+        {
+            content = directContent.ValueKind == JsonValueKind.String
+                ? directContent.GetString() ?? string.Empty
+                : directContent.GetRawText();
+            return true;
+        }
+
+        if (root.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.Object)
+        {
+            if (result.TryGetProperty("content", out var resultContent) && resultContent.ValueKind == JsonValueKind.String)
+            {
+                content = resultContent.GetString() ?? string.Empty;
+                return true;
+            }
+
+            if (result.TryGetProperty("content", out var contentArray) && contentArray.ValueKind == JsonValueKind.Array)
+            {
+                var lines = new List<string>();
+                foreach (var item in contentArray.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.Object
+                        && item.TryGetProperty("text", out var textEl)
+                        && textEl.ValueKind == JsonValueKind.String)
+                    {
+                        var line = textEl.GetString();
+                        if (!string.IsNullOrWhiteSpace(line))
+                        {
+                            lines.Add(line);
+                        }
+                    }
+                }
+
+                if (lines.Count > 0)
+                {
+                    content = string.Join("\n", lines);
+                    return true;
+                }
+
+                content = contentArray.GetRawText();
+                return true;
+            }
+
+            content = result.GetRawText();
+            return true;
+        }
+
+        content = string.Empty;
+        return false;
+    }
+
+    private static string NormalizeArgumentsJson(string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+        {
+            return "{}";
+        }
+
+        try
+        {
+            using var argsDoc = JsonDocument.Parse(argumentsJson);
+            return argsDoc.RootElement.ValueKind == JsonValueKind.Object
+                ? argsDoc.RootElement.GetRawText()
+                : "{}";
+        }
+        catch (JsonException)
+        {
+            return "{}";
+        }
+    }
+
     private static string BuildUri(string baseUrl, string path)
     {
         var left = baseUrl.TrimEnd('/');
         var right = path.StartsWith('/') ? path : $"/{path}";
         return $"{left}{right}";
+    }
+
+    private static HttpMethod ParseHttpMethod(string? method, HttpMethod fallback)
+    {
+        if (string.IsNullOrWhiteSpace(method))
+        {
+            return fallback;
+        }
+
+        return method.Trim().ToUpperInvariant() switch
+        {
+            "GET" => HttpMethod.Get,
+            "POST" => HttpMethod.Post,
+            "PUT" => HttpMethod.Put,
+            "PATCH" => HttpMethod.Patch,
+            "DELETE" => HttpMethod.Delete,
+            "HEAD" => HttpMethod.Head,
+            _ => fallback
+        };
     }
 }

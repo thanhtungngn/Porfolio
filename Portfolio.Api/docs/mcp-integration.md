@@ -14,9 +14,11 @@ Set in `Portfolio.Api/appsettings.json` (or environment-specific settings):
 ```json
 "Mcp": {
   "Enabled": false,
-  "BaseUrl": "",
-  "ToolsPath": "/tools",
-  "InvokePathTemplate": "/tools/{toolName}",
+  "BaseUrl": "https://project-management-mcp.onrender.com",
+  "ToolsPath": "/mcp",
+  "ToolsHttpMethod": "POST",
+  "InvokePathTemplate": "/mcp",
+  "InvokeHttpMethod": "POST",
   "ApiKey": "",
   "TimeoutSeconds": 5
 }
@@ -27,9 +29,21 @@ Set in `Portfolio.Api/appsettings.json` (or environment-specific settings):
 - `Enabled`: Turn MCP integration on/off.
 - `BaseUrl`: MCP server base URL.
 - `ToolsPath`: Endpoint for tool discovery.
+- `ToolsHttpMethod`: HTTP method for tool discovery (`GET`/`POST`/...).
 - `InvokePathTemplate`: Endpoint template to invoke tool by name.
+- `InvokeHttpMethod`: HTTP method for tool invocation (`POST` by default).
 - `ApiKey`: Optional bearer token.
 - `TimeoutSeconds`: Timeout for MCP requests.
+
+## Your MCP Server Setup
+
+For `https://project-management-mcp.onrender.com/mcp` that requires HTTP `POST`:
+
+- `BaseUrl`: `https://project-management-mcp.onrender.com`
+- `ToolsPath`: `/mcp`
+- `ToolsHttpMethod`: `POST`
+- `InvokePathTemplate`: `/mcp`
+- `InvokeHttpMethod`: `POST`
 
 ## Detailed Logging Added
 
