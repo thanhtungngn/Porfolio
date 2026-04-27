@@ -1,0 +1,31 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: portfolio-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  portfolio-api:
+    build:
+      context: .
+      dockerfile: Portfolio.Api/Dockerfile
+    container_name: portfolio-api
+    ports:
+      - "5050:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      INGEST_API_KEY: ${INGEST_API_KEY:-dev-ingest-key}
+      Rag__Qdrant__Host: qdrant
+      Rag__Qdrant__Port: 6334
+      Rag__Qdrant__CollectionName: portfolio
+      Rag__Qdrant__ApiKey: ""
+      Rag__Qdrant__Https: false
+    depends_on:
+      - qdrant
+
+volumes:
+  qdrant_storage:
