@@ -13,6 +13,8 @@ namespace Portfolio.Api.Infrastructure.Extensions;
 
 public static class ServiceCollectionExtensions
 {
+    private static readonly string[] DefaultFrontendOrigins = ["http://localhost:5173"];
+
     public static IServiceCollection AddAppServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOpenApi();
@@ -73,12 +75,29 @@ public static class ServiceCollectionExtensions
         {
             options.AddPolicy("frontend", policy =>
             {
-                policy.WithOrigins("http://localhost:5173")
+                policy.WithOrigins(ResolveFrontendOrigins(configuration))
                     .AllowAnyHeader()
                     .AllowAnyMethod();
             });
         });
 
         return services;
+    }
+
+    private static string[] ResolveFrontendOrigins(IConfiguration configuration)
+    {
+        var configuredOrigins = configuration["FRONTEND_ORIGINS"];
+
+        if (string.IsNullOrWhiteSpace(configuredOrigins))
+        {
+            return DefaultFrontendOrigins;
+        }
+
+        var origins = configuredOrigins
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(origin => !string.IsNullOrWhiteSpace(origin))
+            .ToArray();
+
+        return origins.Length > 0 ? origins : DefaultFrontendOrigins;
     }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { buildApiUrl } from './api'
 import { clearStoredToken, persistToken, readStoredToken, withAuthHeader } from './auth'
 import { AuthContext } from './auth-context'
 
@@ -21,7 +22,7 @@ export function AuthProvider({ children }) {
       setAuthChecking(true)
 
       try {
-        const response = await fetch('/api/auth/me', {
+        const response = await fetch(buildApiUrl('/api/auth/me'), {
           headers: withAuthHeader({}, authToken),
         })
 
@@ -62,7 +63,7 @@ export function AuthProvider({ children }) {
     setAuthNotice('')
 
     try {
-      const response = await fetch(path, {
+      const response = await fetch(buildApiUrl(path), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

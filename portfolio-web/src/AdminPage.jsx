@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { buildApiUrl } from './api'
 import ChatBox from './ChatBox'
 import PortfolioPanel from './PortfolioPanel'
 import { withAuthHeader } from './auth'
@@ -78,7 +79,7 @@ export default function AdminPage() {
     }
 
     try {
-      const response = await fetch('/api/rag/ingest', {
+      const response = await fetch(buildApiUrl('/api/rag/ingest'), {
         method: 'POST',
         headers: withAuthHeader({}, authToken),
         body: formData,
