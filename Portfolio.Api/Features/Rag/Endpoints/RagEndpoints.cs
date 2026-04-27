@@ -1,8 +1,8 @@
 using Grpc.Core;
-using Microsoft.Extensions.Options;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Portfolio.Api.Features.Rag.Contracts;
 using Portfolio.Api.Features.Rag.Services;
-using Portfolio.Api.Infrastructure.Extensions;
 
 namespace Portfolio.Api.Features.Rag.Endpoints;
 
@@ -10,30 +10,46 @@ public static class RagEndpoints
 {
     public static IEndpointRouteBuilder MapRagEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var rag = endpoints.MapGroup("/api/rag");
+        var rag = endpoints.MapGroup("/api/rag").RequireAuthorization();
 
         rag.MapPost("/ingest", async (
-            IngestRequest request,
+            [FromForm] IngestFormRequest request,
             IngestionService ingestionService,
-            IOptions<ApiSecurityOptions> securityOptions,
-            HttpRequest httpRequest,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var expectedApiKey = string.IsNullOrWhiteSpace(securityOptions.Value.IngestApiKey)
-                ? Environment.GetEnvironmentVariable("INGEST_API_KEY")
-                : securityOptions.Value.IngestApiKey;
-            var providedApiKey = httpRequest.Headers["X-API-Key"].FirstOrDefault();
-            if (string.IsNullOrWhiteSpace(expectedApiKey) || !string.Equals(expectedApiKey, providedApiKey, StringComparison.Ordinal))
-                return Results.Unauthorized();
+            var hasText = !string.IsNullOrWhiteSpace(request.Text);
+            var hasFile = request.File is not null && request.File.Length > 0;
 
-            if (string.IsNullOrWhiteSpace(request.Text) && string.IsNullOrWhiteSpace(request.FilePath))
-                return Results.BadRequest(new { error = "Provide either 'text' or 'filePath'." });
+            if (!hasText && !hasFile)
+                return Results.BadRequest(new { error = "Provide either 'text' or an uploaded file." });
 
             try
             {
-                var count = !string.IsNullOrWhiteSpace(request.FilePath)
-                    ? await ingestionService.IngestPdfAsync(request.FilePath!, cancellationToken)
-                    : await ingestionService.IngestTextAsync(request.Text!, request.Source ?? "manual", cancellationToken);
+                int count;
+
+                if (hasFile)
+                {
+                    var userIdValue = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+                    if (!Guid.TryParse(userIdValue, out var userId))
+                    {
+                        return Results.Unauthorized();
+                    }
+
+                    await using var stream = request.File!.OpenReadStream();
+                    count = await ingestionService.IngestFileAsync(
+                        stream,
+                        request.File.FileName,
+                        request.File.ContentType,
+                        request.File.Length,
+                        userId,
+                        request.Source,
+                        cancellationToken);
+                }
+                else
+                {
+                    count = await ingestionService.IngestTextAsync(request.Text!, request.Source ?? "manual", cancellationToken);
+                }
 
                 return Results.Ok(new { chunksIngested = count });
             }
@@ -47,11 +63,15 @@ public static class RagEndpoints
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
             }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
             }
-        });
+        }).DisableAntiforgery();
 
         rag.MapPost("/search", async (RagSearchRequest request, RagRetrievalService ragService, CancellationToken cancellationToken) =>
         {

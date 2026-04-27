@@ -15,6 +15,11 @@ public static class ChatEndpoints
                 return Results.BadRequest(new { error = "Message is required." });
             }
 
+            if (request.UseRag == true)
+            {
+                return Results.Unauthorized();
+            }
+
             try
             {
                 var reply = await chatAgentService.GetReplyAsync(request, cancellationToken);
@@ -29,6 +34,30 @@ public static class ChatEndpoints
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
             }
         }).RequireRateLimiting("chat");
+
+        endpoints.MapPost("/api/chat/rag", async (ChatRequest request, ChatAgentService chatAgentService, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Message))
+            {
+                return Results.BadRequest(new { error = "Message is required." });
+            }
+
+            var ragRequest = request with { UseRag = true };
+
+            try
+            {
+                var reply = await chatAgentService.GetReplyAsync(ragRequest, cancellationToken);
+                return Results.Ok(reply);
+            }
+            catch (ChatValidationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (ChatProviderException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        }).RequireAuthorization().RequireRateLimiting("chat");
 
         return endpoints;
     }

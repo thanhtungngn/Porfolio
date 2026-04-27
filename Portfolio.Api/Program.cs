@@ -1,7 +1,9 @@
+using Portfolio.Api.Features.Auth.Endpoints;
 using Portfolio.Api.Features.Chat.Endpoints;
 using Portfolio.Api.Features.Portfolio.Endpoints;
 using Portfolio.Api.Features.Rag.Endpoints;
 using Portfolio.Api.Infrastructure.Extensions;
+using Portfolio.Api.Infrastructure.Persistence;
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -20,6 +22,8 @@ builder.Host.UseSerilog((context, services, configuration) =>
 builder.Services.AddAppServices(builder.Configuration);
 
 var app = builder.Build();
+await app.Services.InitializeDatabaseAsync();
+
 app.MapDefaultEndpoints();
 
 app.UseRequestLogging();
@@ -36,11 +40,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("frontend");
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
 
+app.MapAuthEndpoints();
 app.MapPortfolioEndpoints();
 app.MapChatEndpoints();
 app.MapRagEndpoints();

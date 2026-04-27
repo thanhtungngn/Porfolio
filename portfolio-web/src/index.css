@@ -2,11 +2,24 @@
   box-sizing: border-box;
 }
 
+html {
+  color-scheme: light;
+}
+
 body {
   margin: 0;
-  font-family: Inter, Segoe UI, sans-serif;
+  min-width: 320px;
+  font-family: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
+  background: #f4efe7;
 }
 
 a {
-  color: #2563eb;
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
