@@ -20,30 +20,15 @@ services:
       - key: FRONTEND_ORIGINS
         sync: false
       - key: Rag__Qdrant__Host
-        fromService:
-          name: portfolio-qdrant
-          type: pserv
-          property: host
+        sync: false
       - key: Rag__Qdrant__Port
         value: "6334"
       - key: Rag__Qdrant__Https
-        value: "false"
+        sync: false
       - key: Rag__Qdrant__ApiKey
-        value: ""
+        sync: false
       - key: Rag__Qdrant__CollectionName
         value: portfolio
-
-  - type: pserv
-    name: portfolio-qdrant
-    runtime: image
-    image:
-      url: docker.io/qdrant/qdrant:latest
-    plan: starter
-    region: oregon
-    disk:
-      name: qdrant-storage
-      mountPath: /qdrant/storage
-      sizeGB: 10
 
   - type: web
     name: portfolio-web
