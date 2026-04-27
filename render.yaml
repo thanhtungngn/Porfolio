@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: portfolio-api
+    runtime: docker
+    dockerfilePath: ./Portfolio.Api/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    autoDeployTrigger: commit
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SIGNING_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: Rag__Qdrant__Host
+        fromService:
+          name: portfolio-qdrant
+          type: pserv
+          property: host
+      - key: Rag__Qdrant__Port
+        value: "6334"
+      - key: Rag__Qdrant__Https
+        value: "false"
+      - key: Rag__Qdrant__ApiKey
+        value: ""
+      - key: Rag__Qdrant__CollectionName
+        value: portfolio
+
+  - type: pserv
+    name: portfolio-qdrant
+    runtime: image
+    image:
+      url: docker.io/qdrant/qdrant:latest
+    plan: starter
+    region: oregon
+    disk:
+      name: qdrant-storage
+      mountPath: /qdrant/storage
+      sizeGB: 10
+
+  - type: web
+    name: portfolio-web
+    runtime: static
+    buildCommand: cd portfolio-web && npm install && npm run build
+    staticPublishPath: ./portfolio-web/dist
+    autoDeployTrigger: commit
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false

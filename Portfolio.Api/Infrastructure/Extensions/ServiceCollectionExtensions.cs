@@ -1,22 +1,20 @@
 using System.Threading.RateLimiting;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Portfolio.Api.Features.Auth.Services;
 using Portfolio.Api.Features.Chat.Options;
 using Portfolio.Api.Features.Chat.Services;
 using Portfolio.Api.Features.Rag.Options;
 using Portfolio.Api.Features.Rag.Services;
-using Portfolio.Api.Infrastructure.Persistence;
-using Portfolio.Api.Infrastructure.Persistence.Entities;
 
 namespace Portfolio.Api.Infrastructure.Extensions;
 
 public static class ServiceCollectionExtensions
 {
+    private static readonly string[] DefaultFrontendOrigins = ["http://localhost:5173"];
+
     public static IServiceCollection AddAppServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOpenApi();
@@ -29,18 +27,7 @@ public static class ServiceCollectionExtensions
         services.Configure<OpenAiEmbeddingOptions>(configuration.GetSection("Rag:OpenAiEmbedding"));
         services.Configure<QdrantOptions>(configuration.GetSection("Rag:Qdrant"));
 
-        var configuredConnectionString = configuration.GetConnectionString("MySql");
-        var connectionString = string.IsNullOrWhiteSpace(configuredConnectionString)
-            ? Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING") ?? string.Empty
-            : configuredConnectionString;
         var securityOptions = configuration.GetSection("Security").Get<ApiSecurityOptions>() ?? new ApiSecurityOptions();
-
-        services.AddDbContext<AppDbContext>(options =>
-        {
-            options.UseMySql(
-                connectionString,
-                new MySqlServerVersion(new Version(8, 0, 36)));
-        });
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -73,7 +60,6 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<IVectorStore, QdrantVectorStore>();
-        services.AddScoped<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
         services.AddScoped<JwtTokenService>();
         services.AddScoped<IEmbeddingService, OpenAiEmbeddingService>();
         services.AddScoped<DocumentChunker>();
@@ -89,12 +75,29 @@ public static class ServiceCollectionExtensions
         {
             options.AddPolicy("frontend", policy =>
             {
-                policy.WithOrigins("http://localhost:5173")
+                policy.WithOrigins(ResolveFrontendOrigins(configuration))
                     .AllowAnyHeader()
                     .AllowAnyMethod();
             });
         });
 
         return services;
+    }
+
+    private static string[] ResolveFrontendOrigins(IConfiguration configuration)
+    {
+        var configuredOrigins = configuration["FRONTEND_ORIGINS"];
+
+        if (string.IsNullOrWhiteSpace(configuredOrigins))
+        {
+            return DefaultFrontendOrigins;
+        }
+
+        var origins = configuredOrigins
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(origin => !string.IsNullOrWhiteSpace(origin))
+            .ToArray();
+
+        return origins.Length > 0 ? origins : DefaultFrontendOrigins;
     }
 }
