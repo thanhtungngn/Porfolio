@@ -4,7 +4,6 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Portfolio.Api.Infrastructure.Extensions;
-using Portfolio.Api.Infrastructure.Persistence.Entities;
 
 namespace Portfolio.Api.Features.Auth.Services;
 
@@ -14,7 +13,7 @@ public sealed class JwtTokenService(IOptions<ApiSecurityOptions> securityOptions
 
     public DateTime GetExpiryUtc() => DateTime.UtcNow.AddMinutes(_securityOptions.JwtExpiresMinutes);
 
-    public string CreateToken(UserAccount user)
+    public string CreateToken(string username, string role = "Admin")
     {
         var signingKey = _securityOptions.ResolveJwtSigningKey();
         if (string.IsNullOrWhiteSpace(signingKey))
@@ -31,10 +30,8 @@ public sealed class JwtTokenService(IOptions<ApiSecurityOptions> securityOptions
         var descriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity([
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Role, user.Role)
+                new Claim(ClaimTypes.Name, username),
+                new Claim(ClaimTypes.Role, role)
             ]),
             Expires = expiresAtUtc,
             Issuer = _securityOptions.JwtIssuer,

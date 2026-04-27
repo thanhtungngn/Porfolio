@@ -1,7 +1,5 @@
 ﻿using Qdrant.Client.Grpc;
 using System.Text;
-using Portfolio.Api.Infrastructure.Persistence;
-using Portfolio.Api.Infrastructure.Persistence.Entities;
 
 namespace Portfolio.Api.Features.Rag.Services;
 
@@ -10,7 +8,6 @@ public class IngestionService(
     DocumentChunker chunker,
     IEmbeddingService embeddingService,
     IVectorStore vectorStore,
-    AppDbContext dbContext,
     ILogger<IngestionService> logger)
 {
     private const uint EmbeddingSize = 1536; // OpenAI text-embedding-3-small
@@ -26,8 +23,6 @@ public class IngestionService(
         Stream stream,
         string fileName,
         string? contentType,
-        long sizeBytes,
-        Guid uploadedByUserId,
         string? source,
         CancellationToken cancellationToken = default)
     {
@@ -39,11 +34,6 @@ public class IngestionService(
         if (string.IsNullOrWhiteSpace(fileName))
         {
             throw new InvalidOperationException("Uploaded file name is required.");
-        }
-
-        if (uploadedByUserId == Guid.Empty)
-        {
-            throw new InvalidOperationException("Authenticated user is required to ingest files.");
         }
 
         logger.LogInformation("Starting file ingestion. FileName={FileName}, ContentType={ContentType}", fileName, contentType);
@@ -66,24 +56,7 @@ public class IngestionService(
             throw new InvalidOperationException("Unsupported file type. Upload a PDF or text-based document.");
         }
 
-        var chunkCount = await IngestTextAsync(text, source: sourceName, cancellationToken);
-
-        var fileRecord = new IngestedFileRecord
-        {
-            Id = Guid.NewGuid(),
-            FileName = fileName,
-            SourceName = sourceName,
-            ContentType = contentType ?? "application/octet-stream",
-            SizeBytes = sizeBytes,
-            ChunkCount = chunkCount,
-            IngestedAtUtc = DateTime.UtcNow,
-            UploadedByUserId = uploadedByUserId
-        };
-
-        dbContext.Files.Add(fileRecord);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return chunkCount;
+        return await IngestTextAsync(text, source: sourceName, cancellationToken);
     }
 
     public async Task<int> IngestTextAsync(string text, string source, CancellationToken cancellationToken = default)

@@ -15,14 +15,11 @@ public static class ChatEndpoints
                 return Results.BadRequest(new { error = "Message is required." });
             }
 
-            if (request.UseRag == true)
-            {
-                return Results.Unauthorized();
-            }
+            var ragRequest = request with { UseRag = true };
 
             try
             {
-                var reply = await chatAgentService.GetReplyAsync(request, cancellationToken);
+                var reply = await chatAgentService.GetReplyAsync(ragRequest, cancellationToken);
                 return Results.Ok(reply);
             }
             catch (ChatValidationException ex)

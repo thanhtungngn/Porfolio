@@ -1,5 +1,4 @@
 using Grpc.Core;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Portfolio.Api.Features.Rag.Contracts;
 using Portfolio.Api.Features.Rag.Services;
@@ -15,7 +14,6 @@ public static class RagEndpoints
         rag.MapPost("/ingest", async (
             [FromForm] IngestFormRequest request,
             IngestionService ingestionService,
-            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var hasText = !string.IsNullOrWhiteSpace(request.Text);
@@ -30,19 +28,11 @@ public static class RagEndpoints
 
                 if (hasFile)
                 {
-                    var userIdValue = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
-                    if (!Guid.TryParse(userIdValue, out var userId))
-                    {
-                        return Results.Unauthorized();
-                    }
-
                     await using var stream = request.File!.OpenReadStream();
                     count = await ingestionService.IngestFileAsync(
                         stream,
                         request.File.FileName,
                         request.File.ContentType,
-                        request.File.Length,
-                        userId,
                         request.Source,
                         cancellationToken);
                 }

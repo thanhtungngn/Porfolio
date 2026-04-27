@@ -1,9 +1,9 @@
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Options;
 using Portfolio.Api.Features.Auth.Contracts;
 using Portfolio.Api.Features.Auth.Services;
-using Portfolio.Api.Infrastructure.Persistence;
-using Portfolio.Api.Infrastructure.Persistence.Entities;
+using Portfolio.Api.Infrastructure.Extensions;
 
 namespace Portfolio.Api.Features.Auth.Endpoints;
 
@@ -11,95 +11,47 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/api/auth/register", async (
-            RegisterRequest request,
-            AppDbContext dbContext,
-            IPasswordHasher<UserAccount> passwordHasher,
-            JwtTokenService jwtTokenService,
-            CancellationToken cancellationToken) =>
-        {
-            var username = request.Username.Trim();
-            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(request.Password))
-            {
-                return Results.BadRequest(new { error = "Username and password are required." });
-            }
-
-            if (request.Password.Length < 8)
-            {
-                return Results.BadRequest(new { error = "Password must be at least 8 characters." });
-            }
-
-            var normalizedUsername = username.ToLowerInvariant();
-            var exists = await dbContext.Users.AnyAsync(
-                user => user.Username.ToLower() == normalizedUsername,
-                cancellationToken);
-
-            if (exists)
-            {
-                return Results.Conflict(new { error = "Username already exists." });
-            }
-
-            var user = new UserAccount
-            {
-                Id = Guid.NewGuid(),
-                Username = username,
-                Role = "User",
-                CreatedAtUtc = DateTime.UtcNow
-            };
-            user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
-
-            dbContext.Users.Add(user);
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            var expiresAtUtc = jwtTokenService.GetExpiryUtc();
-            var token = jwtTokenService.CreateToken(user);
-            return Results.Ok(new AuthResponse(token, user.Username, expiresAtUtc));
-        });
-
-        endpoints.MapPost("/api/auth/login", async (
+        endpoints.MapPost("/api/auth/login", (
             LoginRequest request,
-            AppDbContext dbContext,
-            IPasswordHasher<UserAccount> passwordHasher,
-            JwtTokenService jwtTokenService,
-            CancellationToken cancellationToken) =>
+            IOptions<ApiSecurityOptions> securityOptions,
+            JwtTokenService jwtTokenService) =>
         {
-            var username = request.Username.Trim();
-            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(request.Password))
+            if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
             {
                 return Results.BadRequest(new { error = "Username and password are required." });
             }
 
-            var normalizedUsername = username.ToLowerInvariant();
-            var user = await dbContext.Users.SingleOrDefaultAsync(
-                item => item.Username.ToLower() == normalizedUsername,
-                cancellationToken);
+            var options = securityOptions.Value;
+            var adminPassword = options.ResolveAdminPassword();
 
-            if (user is null)
-            {
-                return Results.Unauthorized();
-            }
+            // Constant-time comparison to prevent timing attacks
+            var usernameMatch = CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(request.Username.Trim()),
+                Encoding.UTF8.GetBytes(options.AdminUsername));
 
-            var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-            if (verificationResult == PasswordVerificationResult.Failed)
+            var passwordMatch = CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(request.Password),
+                Encoding.UTF8.GetBytes(adminPassword));
+
+            if (!usernameMatch || !passwordMatch)
             {
                 return Results.Unauthorized();
             }
 
             var expiresAtUtc = jwtTokenService.GetExpiryUtc();
-            var token = jwtTokenService.CreateToken(user);
-            return Results.Ok(new AuthResponse(token, user.Username, expiresAtUtc));
+            var token = jwtTokenService.CreateToken(request.Username.Trim(), "Admin");
+            return Results.Ok(new AuthResponse(token, request.Username.Trim(), expiresAtUtc));
         });
 
         endpoints.MapGet("/api/auth/me", (HttpContext httpContext) =>
         {
             if (httpContext.User.Identity?.IsAuthenticated == true)
             {
-                var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
                 var username = httpContext.User.Identity?.Name ?? string.Empty;
-                return Results.Ok(new { authenticated = true, userId, username });
+                return Results.Ok(new { authenticated = true, username });
             }
 
-            return Results.Ok(new { authenticated = false, userId = string.Empty, username = string.Empty });
+            return Results.Ok(new { authenticated = false, username = string.Empty });
         });
 
         return endpoints;

@@ -5,7 +5,7 @@ import PortfolioPanel from './PortfolioPanel'
 import { withAuthHeader } from './auth'
 import { useAuth } from './useAuth'
 
-export default function AdminPage({ portfolio }) {
+export default function AdminPage() {
   const {
     authChecking,
     authError,
@@ -172,7 +172,7 @@ export default function AdminPage({ portfolio }) {
                 <span className="status-pill">Public</span>
               </div>
               <div className="admin-preview">
-                <PortfolioPanel portfolio={portfolio} />
+                <PortfolioPanel />
               </div>
             </section>
           </div>

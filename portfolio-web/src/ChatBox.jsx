@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createId, initialMessages, normalizeChatReply } from './chat'
 import { withAuthHeader } from './auth'
 import { useAuth } from './useAuth'
@@ -11,6 +11,11 @@ export default function ChatBox({ mode = 'public' }) {
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
   const [messages, setMessages] = useState(() => initialMessages)
+  const logEndRef = useRef(null)
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const canConfigure = mode === 'admin' && isAuthenticated
   const canSend = !loading && prompt.trim().length > 0
@@ -23,6 +28,7 @@ export default function ChatBox({ mode = 'public' }) {
           <p>{message.content}</p>
         </div>
       ))}
+      <div ref={logEndRef} />
     </div>
   )
 
@@ -51,7 +57,7 @@ export default function ChatBox({ mode = 'public' }) {
         body: JSON.stringify({
           provider,
           model: model.trim() || null,
-          useRag: useProtectedRag,
+          useRag: true,
           message: userMessage.content,
         }),
       })
