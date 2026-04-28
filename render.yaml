@@ -13,12 +13,34 @@ services:
         value: Production
       - key: OPENAI_API_KEY
         sync: false
+      - key: ChatProviders__OpenAI__Endpoint
+        value: https://api.openai.com/v1/chat/completions
+      - key: ChatProviders__OpenAI__DefaultModel
+        value: gpt-4o-mini
       - key: JWT_SIGNING_KEY
         generateValue: true
       - key: ADMIN_PASSWORD
         sync: false
       - key: FRONTEND_ORIGINS
         sync: false
+      - key: Mcp__Enabled
+        value: "true"
+      - key: Mcp__BaseUrl
+        value: https://project-management-mcp.onrender.com
+      - key: Mcp__ToolsPath
+        value: /mcp
+      - key: Mcp__ToolsHttpMethod
+        value: POST
+      - key: Mcp__InvokePathTemplate
+        value: /mcp
+      - key: Mcp__InvokeHttpMethod
+        value: POST
+      - key: Mcp__TimeoutSeconds
+        value: "300"
+      - key: Rag__OpenAiEmbedding__EmbeddingModel
+        value: text-embedding-3-small
+      - key: Rag__OpenAiEmbedding__EmbeddingEndpoint
+        value: https://api.openai.com/v1/embeddings
       - key: Rag__Qdrant__Host
         sync: false
       - key: Rag__Qdrant__Port
