@@ -1,413 +1,249 @@
-# Portfolio RAG App
+# 🚀 AI Portfolio Agent
 
-A full-stack portfolio website with an AI-powered chat assistant backed by Retrieval-Augmented Generation (RAG). The backend is built with **.NET 10 / ASP.NET Core Minimal API**, the frontend with **React 19 + Vite**, and the vector store is **Qdrant**.
+An AI-powered portfolio assistant that allows recruiters to explore a developer’s experience through natural language.
 
----
-
-## Table of Contents
-
-- [Architecture](#architecture)
-- [Features](#features)
-- [RAG Checklist](#rag-checklist)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [API Reference](#api-reference)
-- [RAG Pipeline](#rag-pipeline)
-- [Running Tests](#running-tests)
-- [Project Structure](#project-structure)
-- [Development Notes](#development-notes)
+Instead of browsing static CVs or GitHub repositories, users can interact with an intelligent agent that understands context and provides relevant answers.
 
 ---
 
-## Architecture
+## 🧠 Overview
 
-### System Overview
+This project implements an **AI Agent-based system** that aggregates data from multiple sources (GitHub, CV, external tools) and enables conversational exploration using **LLM + RAG (Retrieval-Augmented Generation)**.
+
+---
+
+## 🎯 Problem
+
+Traditional portfolios are static:
+- Recruiters spend limited time scanning CVs
+- Important technical details are often missed
+- No interactive way to explore candidate capabilities
+
+---
+
+## 💡 Solution
+
+This system introduces an **Agentic Portfolio Experience**:
+
+- 💬 Ask questions naturally  
+- 🧠 AI understands context  
+- 🔍 Retrieves relevant information  
+- ⚡ Generates precise answers  
+
+---
+
+## 🏗️ System Architecture (C4 - Container Level)
 
 ```mermaid
-graph LR
-    FE["React 19 + Vite<br/>portfolio-web :5173"]
-    API["ASP.NET Core Minimal API<br/>Portfolio.Api :5050"]
-    OAI["OpenAI API<br/>chat + embeddings"]
-    OLL["Ollama<br/>local LLM"]
-    QDR["Qdrant<br/>vector store"]
+flowchart TD
+    User[User / Recruiter]
+    Client[Client UI / Chat Interface]
+    APIGW[API Gateway]
+    Orchestrator[Agent Orchestrator]
 
-    FE -- "GET /api/portfolio" --> API
-    FE -- "POST /api/chat" --> API
-    API -- "chat completion" --> OAI
-    API -- "chat completion" --> OLL
-    API -- "embed + upsert / search" --> QDR
-    API -- "embed query" --> OAI
+    Agent[Portfolio Agent]
+
+    Memory[Memory Layer]
+    Cache[Cache]
+    VectorDB[(Vector Database)]
+
+    LLM[LLM Provider]
+
+    MCP[MCP Tools]
+    GitHub[GitHub]
+    CV[CV Data]
+
+    User --> Client
+    Client --> APIGW
+    APIGW --> Orchestrator
+
+    Orchestrator --> Agent
+
+    Agent --> Memory
+    Memory --> Cache
+    Memory --> VectorDB
+
+    Agent --> LLM
+
+    Agent --> MCP
+    MCP --> GitHub
+    MCP --> CV
 ```
 
-### Request Flow — RAG-augmented Chat
+## 🔄 Agent Flow
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant React
-    participant API as Portfolio.Api
-    participant OAI as OpenAI
-    participant QDR as Qdrant
+    participant Orchestrator
+    participant Agent
+    participant Memory
+    participant LLM
+    participant Tools
 
-    User->>React: Type message, useRag=true
-    React->>API: POST /api/chat { useRag: true }
-    API->>OAI: Embed user message (text-embedding-3-small)
-    OAI-->>API: float[1536]
-    API->>QDR: SearchAsync(vector, topK=5)
-    QDR-->>API: ScoredPoint[]
-    API->>API: Build augmented prompt<br/>"Context: ...\nQuestion: ..."
-    API->>OAI: Chat completion (augmented prompt)
-    OAI-->>API: reply
-    API-->>React: { reply }
-    React-->>User: Display answer
+    User->>Orchestrator: Ask question
+    Orchestrator->>Agent: Route request
+
+    Agent->>Memory: Retrieve context (RAG)
+    Memory-->>Agent: Relevant data
+
+    Agent->>Tools: Fetch external data (GitHub/CV)
+    Tools-->>Agent: Data
+
+    Agent->>LLM: Generate response
+    LLM-->>Agent: Answer
+
+    Agent-->>Orchestrator: Final response
+    Orchestrator-->>User: Return answer
 ```
 
-### Ingestion Pipeline
+## 🧩 Components
 
-```mermaid
-flowchart TD
-    SRC["Text / PDF file"] --> LOAD["PdfDocumentLoader<br/>or raw text"]
-    LOAD --> CHUNK["DocumentChunker<br/>500 words, 50 overlap"]
-    CHUNK --> EMB["OpenAiEmbeddingService<br/>text-embedding-3-small"]
-    EMB --> VEC["float[1536] per chunk"]
-    VEC --> UPSERT["QdrantVectorStore.UpsertAsync"]
-    UPSERT --> COL[("Qdrant Collection<br/>portfolio")]
-```
-
-### Projects
-
-| Project | Description |
-|---|---|
-| `Portfolio.Api` | ASP.NET Core Minimal API — chat, ingestion, and RAG retrieval |
-| `Portfolio.Tests` | xUnit unit tests with NSubstitute mocks |
-| `portfolio-web` | React 19 + Vite single-page app |
+The system is designed following a modular, agent-based architecture. Each component has a clear responsibility and can be extended independently.
 
 ---
 
-## Features
+### 🧠 Agent Orchestrator
 
-- **Portfolio page** — fetches owner info, technologies, and highlights from the API
-- **AI Chat** — supports OpenAI (`gpt-4o-mini` default) and local Ollama models
-- **RAG-augmented chat** — set `useRag: true` to ground replies in ingested documents
-- **Document ingestion** — ingest plain text or PDF files into Qdrant
-- **Vector search** — query the Qdrant collection directly via `/api/rag/search`
+The central coordination layer of the system.
 
----
+**Responsibilities:**
+- Receive and interpret user requests
+- Route tasks to appropriate agents
+- Manage execution flow and context lifecycle
+- Aggregate responses from agents
 
-## RAG Checklist
-
-### Phase 1 — Foundation ✅
-- [x] `GET /api/portfolio` endpoint serving portfolio data
-- [x] `POST /api/chat` with OpenAI and Ollama provider routing
-- [x] React UI with provider selector and chat window
-- [x] Vite proxy for `/api` requests
-
-### Phase 2 — Ingestion Pipeline ✅
-- [x] `DocumentChunker` — split text into overlapping word-based chunks
-- [x] `PdfDocumentLoader` — extract text from PDF via PdfPig
-- [x] `OpenAiEmbeddingService` — embed chunks with `text-embedding-3-small` (1536-dim)
-- [x] `QdrantVectorStore` — upsert points, ensure collection, in-memory collection cache
-- [x] `IngestionService` — orchestrate load → chunk → embed → upsert
-- [x] `POST /api/rag/ingest` endpoint (text + PDF)
-- [x] Unit tests: `DocumentChunkerTests`, `IngestionServiceTests`
-
-### Phase 3 — Retrieval & Augmentation ✅
-- [x] `RagRetrievalService` — embed query → search Qdrant → return joined context string
-- [x] `POST /api/rag/search` endpoint for raw semantic search
-- [x] `ChatAgentService` updated — prepend RAG context when `useRag: true`
-- [x] `ChatRequest` extended with optional `useRag` flag
-- [x] Unit tests: `RagRetrievalServiceTests` (context join, empty results, topK, missing payload)
-
-### Phase 4 — Frontend RAG Integration ✅
-- [x] Add RAG toggle (checkbox/switch) to the React chat UI
-- [x] Pass `useRag` flag in `/api/chat` request body
-- [x] Display source attribution from retrieved chunks
-
-### Phase 5 — Production Hardening 🔲
-- [x] Authentication / API key guard on ingest endpoints
-- [x] Rate limiting on `/api/chat`
-- [x] Structured logging (Serilog + request timing middleware)
-- [x] Docker Compose for API + Qdrant
-- [x] CI/CD pipeline (GitHub Actions)
-
-### Phase 6 — Aspire Orchestration & Observability ✅
-- [x] Added `Portfolio.AppHost` Aspire host project
-- [x] Added `Portfolio.ServiceDefaults` shared service defaults project
-- [x] Wired API to `AddServiceDefaults()` and `MapDefaultEndpoints()`
-- [x] Added service-level structured logging in RAG services (ingestion, embedding, retrieval, vector store, PDF loader)
+**Why it matters:**
+- Enables scalability (multi-agent support)
+- Decouples client from internal logic
+- Acts as the “brain” of the system
 
 ---
 
-## Prerequisites
+### 🤖 Portfolio Agent
 
-| Tool | Version |
-|---|---|
-| .NET SDK | 10.0+ |
-| Node.js | 18+ |
-| Docker | For running Qdrant locally (optional) |
-| OpenAI API key | For chat and embeddings |
-| Ollama | Optional, for local LLM inference |
+The core intelligent agent responsible for answering user queries.
 
----
+**Responsibilities:**
+- Understand natural language input
+- Retrieve relevant context from memory (RAG)
+- Decide when to call external tools
+- Generate final responses using LLM
 
-## Getting Started
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/thanhtungngn/Porfolio.git
-cd Porfolio
-```
-
-### 2. Configure the API
-
-Fill in your secrets in `Portfolio.Api/appsettings.json` or set environment variables:
-
-```bash
-# Used for both chat (OpenAI provider) and RAG embeddings
-OPENAI_API_KEY=sk-...
-
-# Required for protected ingest endpoint (/api/rag/ingest)
-INGEST_API_KEY=your-ingest-api-key
-```
-
-`appsettings.json` reference:
-
-```json
-{
-  "ChatProviders": {
-    "OpenAI": {
-      "Endpoint": "https://api.openai.com/v1/chat/completions",
-      "DefaultModel": "gpt-4o-mini",
-      "ApiKey": ""
-    },
-    "Ollama": {
-      "Endpoint": "http://localhost:11434/api/chat",
-      "DefaultModel": "llama3.2"
-    }
-  },
-  "Rag": {
-    "OpenAiEmbedding": {
-      "EmbeddingModel": "text-embedding-3-small",
-      "EmbeddingEndpoint": "https://api.openai.com/v1/embeddings",
-      "ApiKey": ""
-    },
-    "Qdrant": {
-      "Host": "your-qdrant-host",
-      "Port": 6334,
-      "CollectionName": "portfolio",
-      "ApiKey": ""
-    }
-  }
-}
-```
-
-### 3. Run Qdrant (local)
-
-```bash
-docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
-
-For local Qdrant update the config:
-```json
-"Qdrant": { "Host": "localhost", "Port": 6334, "ApiKey": "" }
-```
-
-### 3.1 Run full stack with Docker Compose
-
-```bash
-docker compose up --build
-```
-
-- API: `http://localhost:5050`
-- Qdrant: `http://localhost:6333`
-
-### 3.2 Run with .NET Aspire (recommended for local orchestration)
-
-```bash
-dotnet run --project Portfolio.AppHost
-```
-
-This starts the Aspire orchestration host with `portfolio-api` and `qdrant` resources.
-
-### 4. Start the API
-
-```bash
-cd Portfolio.Api
-dotnet run
-```
-
-API runs at `http://localhost:5050`. Scalar API docs at `http://localhost:5050/scalar` (development only).
-
-### 5. Start the frontend
-
-```bash
-cd portfolio-web
-npm install
-npm run dev
-```
-
-Frontend runs at `http://localhost:5173` and proxies `/api` requests to the backend.
+**Capabilities:**
+- Question answering
+- Context-aware reasoning
+- Tool usage (GitHub, CV data)
 
 ---
 
-## API Reference
+### 🧠 Memory Layer
 
-### `GET /api/portfolio`
-Returns the portfolio owner's info, technologies, highlights, and contact details.
+Handles both short-term and long-term memory for the system.
 
----
+**Components:**
+- **Cache (Short-term memory):**
+  - Stores recent interactions
+  - Improves response speed
+  - Maintains conversational context
 
-### `POST /api/chat`
-Chat with an LLM provider, optionally grounded with RAG context.
+- **Vector Database (Long-term memory):**
+  - Stores embeddings of documents (CV, GitHub data)
+  - Enables semantic search (RAG)
+  - Supports context retrieval for LLM
 
-**Request:**
-```json
-{
-  "provider": "openai",
-  "message": "What technologies do you use?",
-  "model": "gpt-4o-mini",
-  "useRag": true
-}
-```
-
-| Field | Required | Description |
-|---|---|---|
-| `provider` | Yes | `"openai"` or `"ollama"` |
-| `message` | Yes | User message |
-| `model` | No | Overrides the default model |
-| `useRag` | No | `false` by default; when `true`, retrieves top-5 context chunks from Qdrant and prepends them to the prompt |
-
-**Response:**
-```json
-{ "reply": "..." }
-```
+**Why it matters:**
+- Allows the system to “remember” and reason over data
+- Improves accuracy and relevance of responses
 
 ---
 
-### `POST /api/rag/ingest`
-Ingests text or a PDF file into the Qdrant vector store.
+### 🔧 Tool Integration Layer (MCP)
 
-**Request (text):**
-```json
-{ "text": "Your content here...", "source": "manual" }
-```
+Provides access to external data sources through standardized interfaces.
 
-**Request (PDF):**
-```json
-{ "filePath": "/absolute/path/to/file.pdf" }
-```
+**Examples:**
+- GitHub repositories
+- CV / structured profile data
+- Other extensible APIs
 
-**Response:**
-```json
-{ "chunksIngested": 12 }
-```
+**Responsibilities:**
+- Fetch real-time or structured data
+- Normalize data for agent consumption
+- Extend system capabilities beyond static knowledge
 
----
-
-### `POST /api/rag/search`
-Performs a raw semantic search against the vector store (useful for debugging).
-
-**Request:**
-```json
-{ "query": "ASP.NET Core experience", "topK": 5 }
-```
-
-**Response:**
-```json
-{ "context": "Chunk one text...\n\nChunk two text..." }
-```
+**Why it matters:**
+- Transforms the agent from static chatbot → dynamic system
+- Enables real-world use cases
 
 ---
 
-## RAG Pipeline
+### 🤖 LLM Provider
 
-```mermaid
-flowchart LR
-    subgraph Ingest
-        A["Text / PDF"] --> B["DocumentChunker\n500 words, 50 overlap"]
-        B --> C["OpenAiEmbeddingService\ntext-embedding-3-small"]
-        C --> D["QdrantVectorStore\nUpsertAsync"]
-    end
+Handles natural language understanding and generation.
 
-    subgraph Retrieve
-        E["User query"] --> F["OpenAiEmbeddingService\nEmbed query"]
-        F --> G["QdrantVectorStore\nSearchAsync top-K"]
-        G --> H["RagRetrievalService\nJoin chunk texts"]
-        H --> I["Augmented prompt\n→ LLM"]
-    end
-```
+**Responsibilities:**
+- Interpret user intent
+- Generate human-like responses
+- Perform reasoning based on provided context
 
----
+**Examples:**
+- OpenAI APIs
+- Other LLM providers
 
-## Running Tests
-
-```bash
-cd Portfolio.Tests
-dotnet test
-```
-
-| Suite | Coverage |
-|---|---|
-| `DocumentChunkerTests` | Empty input, single chunk, multi-chunk, unique IDs, sequential index, word limit, source preservation |
-| `IngestionServiceTests` | Chunk count, `EnsureCollection` called once, `Upsert` called once, empty text short-circuits |
-| `RagRetrievalServiceTests` | Context join, no results returns empty string, query passed to embedder, topK forwarded to search, missing payload ignored |
+**Why it matters:**
+- Core intelligence engine of the system
+- Works together with RAG to improve accuracy
 
 ---
 
-## Aspire Projects
+### 🌐 API Layer
 
-- `Portfolio.AppHost`: distributed app host for local orchestration (API + Qdrant)
-- `Portfolio.ServiceDefaults`: shared defaults for OpenTelemetry, health checks, service discovery, and resilient HTTP
+Exposes system functionality to external clients.
 
----
+**Responsibilities:**
+- Provide endpoints for chat interaction
+- Handle request/response lifecycle
+- Validate input and manage errors
 
-## CI/CD
-
-GitHub Actions workflow is available at `.github/workflows/ci.yml` and runs:
-
-- .NET restore/build/test
-- Frontend build (`portfolio-web`)
-- Docker compose validation + API image build
+**Why it matters:**
+- Enables integration with UI, chatbot interfaces, or external systems
 
 ---
 
-## Project Structure
+### 💬 Client Interface (Optional)
 
-```
-Porfolio/
-├── Portfolio.Api/
-│   ├── Program.cs                         # Minimal API endpoints + DI composition root
-│   ├── appsettings.json
-│   └── Rag/
-│       ├── Models/
-│       │   └── DocumentChunk.cs
-│       ├── Options/
-│       │   ├── OpenAiEmbeddingOptions.cs
-│       │   └── QdrantOptions.cs
-│       └── Services/
-│           ├── DocumentChunker.cs
-│           ├── IngestionService.cs
-│           ├── OpenAiEmbeddingService.cs  # IEmbeddingService implementation
-│           ├── PdfDocumentLoader.cs
-│           ├── QdrantVectorStore.cs       # IVectorStore implementation
-│           └── RagRetrievalService.cs     # Query → embed → search → context
-├── Portfolio.Tests/
-│   ├── DocumentChunkerTests.cs
-│   ├── IngestionServiceTests.cs
-│   └── RagRetrievalServiceTests.cs
-└── portfolio-web/
-    ├── src/
-    │   ├── App.jsx                        # Portfolio + chat UI
-    │   └── main.jsx
-    └── package.json
-```
+User-facing interface for interacting with the system.
+
+**Examples:**
+- Web chat UI
+- CLI interface
+- Integration with messaging platforms
+
+**Responsibilities:**
+- Capture user input
+- Display responses
+- Provide interactive experience
 
 ---
 
-## Development Notes
+## 🧠 Design Principles
 
-- **Embedding model**: `text-embedding-3-small` produces **1536-dimensional** vectors. If you switch models, drop the existing Qdrant collection and re-ingest — vector dimension must match at collection creation time.
-- **Collection initialization**: `QdrantVectorStore` caches collection existence in-memory (`_collectionEnsured` flag) to avoid a ~1.4 s network round-trip on every ingestion call.
-- **RAG opt-in**: RAG context retrieval only runs when `useRag: true` is passed to `/api/chat`, keeping standard chat fast.
-- **Ollama**: No API key required. Ensure the model is pulled locally: `ollama pull llama3.2`.
+- **Modularity:** Each component can evolve independently  
+- **Scalability:** Easily extend to multi-agent architecture  
+- **Separation of Concerns:** Clear boundaries between layers  
+- **Extensibility:** New tools and agents can be added without breaking the system  
+
+---
+## 🧪 Example Use Cases
+- “What projects has Tung worked on?”
+- “Explain his experience with microservices”
+- “Does he have experience with AI systems?”
+- “What technologies does he use in backend development?”
+
+## 🛠️ Tech Stack
+- Backend: .NET
+- AI/LLM: OpenAI / LLM APIs
+- Architecture: Clean Architecture, DI
+- Data: Vector Database (RAG)
+- Integration: MCP (GitHub, CV)
